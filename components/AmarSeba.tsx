@@ -93,12 +93,14 @@ export default function AmarSeba() {
 
     // 1. Get Location
     try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
-      });
-      latCurrent = pos.coords.latitude;
-      lngCurrent = pos.coords.longitude;
-      setLocation({ lat: latCurrent, lng: lngCurrent });
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject);
+        });
+        latCurrent = pos.coords.latitude;
+        lngCurrent = pos.coords.longitude;
+        setLocation({ lat: latCurrent, lng: lngCurrent });
+      }
     } catch (e) {
       console.log("Location denied or unavailable");
     }
@@ -162,9 +164,11 @@ export default function AmarSeba() {
   useEffect(() => {
     // Set static metrics
     requestAnimationFrame(() => {
-      if (typeof navigator !== 'undefined') {
-        setDeviceName(navigator.userAgent?.split('(')[1]?.split(')')[0] || 'Unknown Device');
-        setBrowser(navigator.userAgent.split(' ').pop() || 'Unknown');
+      if (typeof navigator !== 'undefined' && navigator.userAgent) {
+        const ua = navigator.userAgent;
+        const deviceMatch = ua.match(/\(([^)]+)\)/);
+        setDeviceName(deviceMatch ? deviceMatch[1] : 'Unknown Device');
+        setBrowser(ua.split(' ').pop() || 'Unknown');
       }
       if (typeof window !== 'undefined') {
         setScreenRes(`${window.screen.width}x${window.screen.height}`);
