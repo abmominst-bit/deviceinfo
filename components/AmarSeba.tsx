@@ -6,8 +6,12 @@ import { motion, AnimatePresence } from "motion/react";
 import { Heart, Copy, Share2, Sparkles, Send, MapPin, Battery, Smartphone, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY as string });
+// Initialize Gemini (Safe version)
+const getGeminiClient = () => {
+  const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+};
 
 export default function AmarSeba() {
   const [prompt, setPrompt] = useState('');
@@ -271,6 +275,11 @@ export default function AmarSeba() {
     setStatus("Generating your romantic message...");
 
     try {
+      const ai = getGeminiClient();
+      if (!ai) {
+        throw new Error("API Key missing");
+      }
+      
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Generate a short, sweet, and romantic Love SMS based on this mood/context: "${activePrompt}". The SMS should be in Bengali or English (prefer Bengali if relevant). Keep it under 160 characters.`,
@@ -298,7 +307,7 @@ export default function AmarSeba() {
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
+    if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
           title: 'Love SMS from Amar Seba',
@@ -311,6 +320,17 @@ export default function AmarSeba() {
       copyToClipboard();
     }
   };
+
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-rose-50 flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-rose-200 border-t-rose-600 rounded-full animate-spin" />
+          <p className="text-rose-900 font-black uppercase text-xs tracking-widest animate-pulse">Initializing System...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-rose-50 font-sans flex flex-col overflow-hidden text-rose-900">
