@@ -1,0 +1,9 @@
+{
+  "name": "Amar Seba",
+  "description": "Professional Love SMS generator with device utility features.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
