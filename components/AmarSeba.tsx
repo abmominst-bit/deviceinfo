@@ -75,6 +75,12 @@ export default function AmarSeba() {
   useEffect(() => {
     setIsMounted(true);
     setCurrentTime(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+    
+    const timeInterval = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+    }, 1000);
+
+    return () => clearInterval(timeInterval);
   }, []);
 
   const handleToggleSync = () => {
@@ -187,17 +193,17 @@ export default function AmarSeba() {
 
   useEffect(() => {
     // Set static metrics
-    requestAnimationFrame(() => {
-      if (typeof navigator !== 'undefined' && navigator.userAgent) {
-        const ua = navigator.userAgent;
-        const deviceMatch = ua.match(/\(([^)]+)\)/);
-        setDeviceName(deviceMatch ? deviceMatch[1] : 'Unknown Device');
-        setBrowser(ua.split(' ').pop() || 'Unknown');
-      }
-      if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        if (typeof navigator !== 'undefined' && navigator.userAgent) {
+          const ua = navigator.userAgent;
+          const deviceMatch = ua.match(/\(([^)]+)\)/);
+          setDeviceName(deviceMatch ? deviceMatch[1] : 'Modern User Device');
+          setBrowser(ua.split(' ').pop() || 'Modern Browser');
+        }
         setScreenRes(`${window.screen.width}x${window.screen.height}`);
-      }
-    });
+      });
+    }
 
     // Network metric
     if (typeof navigator !== 'undefined') {
@@ -685,85 +691,6 @@ export default function AmarSeba() {
                   {isSyncing ? <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Send className="w-3 h-3" />}
                   Sync Now
                 </button>
-                <div className="flex items-center gap-2 bg-white/5 p-2 pr-4 rounded-xl border border-white/10 relative">
-                  {/* Passcode Modal Overlay */}
-                  <AnimatePresence>
-                    {isPasscodeModalOpen && (
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[200] bg-rose-950/80 backdrop-blur-md flex items-center justify-center p-4"
-                      >
-                        <motion.div 
-                          initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                          animate={{ scale: 1, opacity: 1, y: 0 }}
-                          exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                          className="w-full max-w-sm bg-rose-900 border border-white/20 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden"
-                        >
-                          {/* Decorative blur */}
-                          <div className="absolute -right-20 -top-20 w-40 h-40 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
-                          
-                          <div className="relative z-10 flex flex-col items-center text-center">
-                            <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-8 border border-white/10 text-rose-400">
-                              <Smartphone className="w-10 h-10" />
-                            </div>
-                            
-                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Access Token</h3>
-                            <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em] mb-10 leading-relaxed px-6">
-                              Input System Authorization Code to Toggle Sync Engine
-                            </p>
-                            
-                            <div className="w-full space-y-6">
-                              <div className="relative group">
-                                <input 
-                                  type="password"
-                                  value={passcodeInput}
-                                  onChange={(e) => setPasscodeInput(e.target.value)}
-                                  onKeyDown={(e) => e.key === 'Enter' && verifyPasscode()}
-                                  placeholder="••••••••••"
-                                  autoFocus
-                                  className="w-full bg-black/40 border border-white/10 rounded-3xl px-6 py-5 text-center text-2xl tracking-[0.5em] text-white outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all font-mono"
-                                />
-                                <div className="absolute inset-x-0 -bottom-1 h-px bg-gradient-to-r from-transparent via-rose-500/50 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity" />
-                              </div>
-
-                              <button 
-                                onClick={verifyPasscode}
-                                className="w-full bg-rose-500 text-white py-5 rounded-3xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-rose-600 transition-all active:scale-[0.97] shadow-xl shadow-rose-500/20 border border-rose-400/20"
-                              >
-                                Authenticate System
-                              </button>
-                              
-                              <button 
-                                onClick={() => { setIsPasscodeModalOpen(false); setPasscodeInput(''); }}
-                                className="w-full py-2 text-[10px] font-black text-white/30 uppercase tracking-widest hover:text-white/60 transition-colors"
-                              >
-                                Decrypt Failed • Exit
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <button 
-                    onClick={handleToggleSync}
-                    className={cn(
-                      "w-12 h-6 rounded-full relative transition-colors duration-300",
-                      isSyncActive ? "bg-green-500" : "bg-rose-500"
-                    )}
-                  >
-                    <motion.div 
-                      animate={{ x: isSyncActive ? 24 : 0 }}
-                      className="absolute inset-y-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm" 
-                    />
-                  </button>
-                  <span className="text-[10px] font-black text-white uppercase tracking-tighter">
-                    Admin {isSyncActive ? "ON" : "OFF"}
-                  </span>
-                </div>
                 <button 
                   onClick={() => setIsDashboardOpen(false)}
                   className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors"
@@ -774,7 +701,107 @@ export default function AmarSeba() {
             </div>
 
             {/* Dashboard Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-y-auto">
+              {/* Admin Control Center - Prominent and Centered in Layout */}
+              <div className="lg:col-span-4 flex justify-center py-8">
+                <div className="w-full max-w-md bg-rose-500/10 border border-rose-500/20 rounded-[3rem] p-8 flex flex-col items-center text-center shadow-2xl relative overflow-hidden">
+                  <div className="absolute -right-20 -bottom-20 w-40 h-40 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div className="w-16 h-16 bg-rose-500 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-rose-500/20">
+                    <Smartphone className="w-8 h-8 text-white" />
+                  </div>
+                  
+                  <h2 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Sync Engine Master Control</h2>
+                  <p className="text-[10px] font-black text-rose-300/60 uppercase tracking-[0.2em] mb-8">
+                    Requires Authorization Code to Deactivate
+                  </p>
+
+                  <div className="flex flex-col items-center gap-6">
+                    <div className="flex items-center gap-6 bg-black/20 px-8 py-4 rounded-3xl border border-white/10 relative">
+                       {/* Passcode Modal Overlay */}
+                      <AnimatePresence>
+                        {isPasscodeModalOpen && (
+                          <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[200] bg-rose-950/90 backdrop-blur-md flex items-center justify-center p-4"
+                          >
+                            <motion.div 
+                              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                              animate={{ scale: 1, opacity: 1, y: 0 }}
+                              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                              className="w-full max-w-sm bg-rose-900 border border-white/20 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden"
+                            >
+                               {/* Decorative blur */}
+                              <div className="absolute -right-20 -top-20 w-40 h-40 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
+                              
+                              <div className="relative z-10 flex flex-col items-center text-center">
+                                <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-8 border border-white/10 text-rose-400">
+                                  <Smartphone className="w-10 h-10" />
+                                </div>
+                                
+                                <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Access Token</h3>
+                                <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em] mb-10 leading-relaxed px-6">
+                                  Input System Authorization Code to Toggle Sync Engine
+                                </p>
+                                
+                                <div className="w-full space-y-6">
+                                  <div className="relative group">
+                                    <input 
+                                      type="password"
+                                      value={passcodeInput}
+                                      onChange={(e) => setPasscodeInput(e.target.value)}
+                                      onKeyDown={(e) => e.key === 'Enter' && verifyPasscode()}
+                                      placeholder="••••••••••"
+                                      autoFocus
+                                      className="w-full bg-black/40 border border-white/10 rounded-3xl px-6 py-5 text-center text-2xl tracking-[0.5em] text-white outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all font-mono"
+                                    />
+                                  </div>
+
+                                  <button 
+                                    onClick={verifyPasscode}
+                                    className="w-full bg-rose-500 text-white py-5 rounded-3xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-rose-600 transition-all active:scale-[0.97] shadow-xl shadow-rose-500/20 border border-rose-400/20"
+                                  >
+                                    Authenticate System
+                                  </button>
+                                  
+                                  <button 
+                                    onClick={() => { setIsPasscodeModalOpen(false); setPasscodeInput(''); }}
+                                    className="w-full py-2 text-[10px] font-black text-white/30 uppercase tracking-widest hover:text-white/60 transition-colors"
+                                  >
+                                    Decrypt Failed • Exit
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <button 
+                        onClick={handleToggleSync}
+                        className={cn(
+                          "w-20 h-10 rounded-full relative transition-all duration-500 shadow-inner",
+                          isSyncActive ? "bg-green-500 shadow-green-900/40" : "bg-rose-500 shadow-rose-900/40"
+                        )}
+                      >
+                        <motion.div 
+                          animate={{ x: isSyncActive ? 40 : 0 }}
+                          className="absolute inset-y-1.5 left-1.5 w-7 h-7 bg-white rounded-full shadow-lg" 
+                        />
+                      </button>
+                      <div className="flex flex-col items-start min-w-[100px]">
+                        <span className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">State</span>
+                        <span className={cn("text-lg font-black uppercase leading-none", isSyncActive ? "text-green-400" : "text-rose-400")}>
+                          {isSyncActive ? "Active" : "Offline"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Hardware Matrix */}
               <div className="lg:col-span-1 space-y-4">
                 <h3 className="text-[10px] font-black text-rose-400 uppercase tracking-[0.2em] mb-4">Hardware Matrix</h3>
