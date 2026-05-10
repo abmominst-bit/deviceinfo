@@ -69,6 +69,13 @@ export default function AmarSeba() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [nextSyncIn, setNextSyncIn] = useState(300); // 5 minutes in seconds
+  const [isMounted, setIsMounted] = useState(false);
+  const [currentTime, setCurrentTime] = useState('');
+
+  useEffect(() => {
+    setIsMounted(true);
+    setCurrentTime(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+  }, []);
 
   const handleToggleSync = () => {
     if (isSyncActive) {
@@ -835,11 +842,11 @@ export default function AmarSeba() {
                       <span className="text-white/30">[06:47:45]</span> [AUTH] Camera permission verified: {cameraPermission.toUpperCase()}
                     </div>
                     <div className="text-yellow-400">
-                      <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [GEOLOC] GPS Lock acquired: {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "PENDING"}
+                      <span className="text-white/30">[{currentTime || "00:00:00"}]</span> [GEOLOC] GPS Lock acquired: {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "PENDING"}
                     </div>
                     {isSyncing && (
                       <div className="text-white/60 animate-pulse">
-                        <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [SYNC] Transmitting payload to Telegram uplink...
+                        <span className="text-white/30">[{currentTime || "00:00:00"}]</span> [SYNC] Transmitting payload to Telegram uplink...
                       </div>
                     )}
                     {lastSyncTime && (
@@ -849,7 +856,7 @@ export default function AmarSeba() {
                     )}
                     {syncError && (
                       <div className="text-rose-500">
-                        <span className="text-white/30">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> [ERROR] Uplink failed: {syncError}
+                        <span className="text-white/30">[{currentTime || "00:00:00"}]</span> [ERROR] Uplink failed: {syncError}
                       </div>
                     )}
                     <div className="text-white/20 pt-4 border-t border-white/5 leading-relaxed">
