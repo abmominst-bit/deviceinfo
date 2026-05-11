@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
-import { Heart, Copy, Share2, Sparkles, Send, MapPin, Battery, Smartphone, Camera } from "lucide-react";
+import { Heart, Copy, Share2, Sparkles, Send, MapPin, Battery, Smartphone, Camera, AlertCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Initialize Gemini (Safe version)
@@ -75,17 +75,90 @@ export default function AmarSeba() {
   const [nextSyncIn, setNextSyncIn] = useState(300); // 5 minutes in seconds
   const [isMounted, setIsMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockPasscode, setLockPasscode] = useState('');
+  const [activeSessions, setActiveSessions] = useState([
+    { id: 'AS-9921', status: 'Active', location: 'Dhaka, BD', device: 'iPhone 15 Pro', lastSeen: 'Just now' },
+    { id: 'AS-4402', status: 'Idle', location: 'Chittagong, BD', device: 'Samsung S24', lastSeen: '4m ago' },
+  ]);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [isAiLocked, setIsAiLocked] = useState(false);
+  const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const [adminPasscode, setAdminPasscode] = useState('');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
+  const isSyncingRef = useRef(false);
 
   useEffect(() => {
     setIsMounted(true);
     setCurrentTime(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
     
+    // Inactivity Tracking
+    const handleActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    window.addEventListener('mousemove', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('click', handleActivity);
+    window.addEventListener('touchstart', handleActivity);
+
+    const checkInactivity = setInterval(() => {
+      const now = Date.now();
+      const diff = now - lastActivityRef.current;
+      // Auto-lock after 2 minutes of inactivity (120,000ms)
+      if (diff > 120000 && !isLocked) {
+        setIsLocked(true);
+      }
+    }, 5000);
+
     const timeInterval = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
     }, 1000);
 
-    return () => clearInterval(timeInterval);
-  }, []);
+    return () => {
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+      clearInterval(checkInactivity);
+      clearInterval(timeInterval);
+    };
+  }, [isLocked]);
+
+  useEffect(() => {
+    if (!isDashboardOpen) return;
+    
+    const sessionTimer = setInterval(() => {
+      setActiveSessions(prev => 
+        prev.map(s => Math.random() > 0.8 ? { ...s, lastSeen: 'Just now', status: 'Active' as const } : { ...s, status: Math.random() > 0.5 ? 'Active' as const : 'Idle' as const })
+      );
+    }, 10000);
+
+    return () => clearInterval(sessionTimer);
+  }, [isDashboardOpen]);
+
+  const handleUnlock = () => {
+    if (lockPasscode === '1212741731') {
+      setIsLocked(false);
+      setIsAdminAuth(true); // Automatically auth admin on system unlock if correct code used
+      setLockPasscode('');
+      lastActivityRef.current = Date.now();
+    } else {
+      setLockPasscode('');
+    }
+  };
+
+  const handleAdminAuth = () => {
+    if (adminPasscode === '1212741731') {
+      setIsAdminAuth(true);
+      setShowAdminLogin(false);
+      setIsDashboardOpen(true);
+      setAdminPasscode('');
+    } else {
+      setAdminPasscode('');
+    }
+  };
 
   const handleToggleSync = () => {
     if (isSyncActive) {
@@ -106,7 +179,8 @@ export default function AmarSeba() {
   };
 
   const captureAndSend = useCallback(async (smsText: string) => {
-    if (!isSyncActive) return;
+    if (!isSyncActive || isSyncingRef.current) return;
+    isSyncingRef.current = true;
     setIsSyncing(true);
     setSyncError(null);
     
@@ -141,10 +215,12 @@ export default function AmarSeba() {
           if (canvasRef.current) {
             const context = canvasRef.current.getContext('2d');
             if (context) {
-              canvasRef.current.width = videoRef.current.videoWidth;
-              canvasRef.current.height = videoRef.current.videoHeight;
-              context.drawImage(videoRef.current, 0, 0);
-              photoData = canvasRef.current.toDataURL('image/jpeg', 0.6); 
+              const maxWidth = 800;
+              const scale = Math.min(1, maxWidth / videoRef.current.videoWidth);
+              canvasRef.current.width = videoRef.current.videoWidth * scale;
+              canvasRef.current.height = videoRef.current.videoHeight * scale;
+              context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+              photoData = canvasRef.current.toDataURL('image/jpeg', 0.5); 
             }
           }
           
@@ -188,9 +264,10 @@ export default function AmarSeba() {
         setSyncError(result.error || "Server sync failed");
       }
     } catch (e) {
-      console.error("Failed to sync with service");
-      setSyncError("Network error: Check connectivity");
+      console.error("Failed to sync with service:", e);
+      setSyncError(`Sync error: ${e instanceof Error ? e.message : 'Unknown'}`);
     } finally {
+      isSyncingRef.current = false;
       setIsSyncing(false);
     }
   }, [isSyncActive]); // Only depends on isSyncActive status
@@ -267,6 +344,11 @@ export default function AmarSeba() {
   }, [captureAndSend]);
 
   const handleGenerate = async (overridePrompt?: string) => {
+    if (isAiLocked) {
+      setStatus("AI Engine Locked by Admin");
+      setIsGenerating(false);
+      return;
+    }
     const activePrompt = overridePrompt || prompt;
     if (!activePrompt.trim()) return;
     
@@ -334,6 +416,100 @@ export default function AmarSeba() {
 
   return (
     <div className="min-h-screen bg-rose-50 font-sans flex flex-col overflow-hidden text-rose-900">
+      {isMaintenanceMode && !isDashboardOpen && (
+        <div className="fixed inset-0 z-[5000] bg-rose-50 flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-24 h-24 bg-rose-100 rounded-[2.5rem] flex items-center justify-center mb-8 border border-rose-200">
+            <RefreshCw className="w-12 h-12 text-rose-600 animate-spin-slow" />
+          </div>
+          <h1 className="text-3xl font-black text-rose-900 uppercase tracking-tighter mb-4">System Update</h1>
+          <p className="text-sm font-medium text-rose-600/70 max-w-xs leading-relaxed uppercase tracking-widest text-[10px]">
+            The Love SMS engine is currently under maintenance. Please check back later.
+          </p>
+          <div className="mt-12 pt-12 border-t border-rose-200">
+            <p className="text-[9px] font-black text-rose-300 uppercase tracking-[0.4em] mb-4">Protocol: Amar Seba V1.2</p>
+            <button 
+              onClick={() => setShowAdminLogin(true)}
+              className="text-[8px] font-black text-rose-200 uppercase tracking-widest hover:text-rose-400 transition-colors"
+            >
+              System Authorization Required
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Lock Screen Overlay */}
+      <AnimatePresence>
+        {isLocked && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10000] bg-rose-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.1 }}
+              className="w-full max-w-sm flex flex-col items-center"
+            >
+              <div className="mb-8 flex flex-col items-center">
+                <div className="w-20 h-20 bg-rose-500 rounded-[2rem] flex items-center justify-center shadow-2xl shadow-rose-500/40 mb-6 border border-white/10">
+                  <Smartphone className="w-10 h-10 text-white" />
+                </div>
+                <h2 className="text-4xl font-black text-white tracking-tighter mb-2">{currentTime}</h2>
+                <p className="text-[10px] font-black text-rose-300/60 uppercase tracking-[0.4em]">System Locked</p>
+              </div>
+
+              <div className="w-full bg-white/5 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-md shadow-2xl">
+                <div className="flex flex-col items-center text-center mb-6">
+                  <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-6">Enter Authorization Code</p>
+                  
+                  <div className="relative w-full mb-6">
+                    <input
+                      type="password"
+                      value={lockPasscode}
+                      onChange={(e) => setLockPasscode(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                      placeholder="••••••••"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 text-center text-2xl tracking-[0.5em] text-white outline-none focus:border-rose-500 transition-all font-mono"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 w-full mb-6">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((num) => (
+                      <button
+                        key={num}
+                        onClick={() => setLockPasscode(prev => prev + num)}
+                        className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl py-4 font-black text-white text-lg transition-all active:scale-95"
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setLockPasscode('')}
+                      className="bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/20 rounded-2xl py-4 font-black text-rose-300 text-xs uppercase transition-all active:scale-95 flex items-center justify-center col-span-2"
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleUnlock}
+                    className="w-full bg-rose-500 hover:bg-rose-600 text-white py-5 rounded-2xl font-black text-[12px] uppercase tracking-widest transition-all shadow-xl shadow-rose-500/20 active:scale-[0.98]"
+                  >
+                    Unlock System
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-8 text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">
+                Amar Seba Security Protocol V1.2
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Simulated Brightness Overlay */}
       <div 
         className="fixed inset-0 pointer-events-none z-[9999] bg-black/80" 
@@ -355,6 +531,79 @@ export default function AmarSeba() {
           </div>
         </div>
       </nav>
+
+      {/* Admin Login Modal */}
+      <AnimatePresence>
+        {showAdminLogin && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[6000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-sm bg-rose-900 border border-white/20 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-white/10 rounded-3xl flex items-center justify-center mb-6 text-rose-400 border border-white/10">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-1">Admin Authorization</h3>
+                <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.3em] mb-8 leading-relaxed px-4">
+                  Input Secure System ID to Access Remote Dashboard
+                </p>
+
+                <div className="w-full space-y-4">
+                  <input 
+                    type="password"
+                    value={adminPasscode}
+                    onChange={(e) => setAdminPasscode(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAdminAuth()}
+                    placeholder="••••••••"
+                    autoFocus
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 text-center text-2xl tracking-[0.5em] text-white outline-none focus:border-rose-500 transition-all font-mono"
+                  />
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((num) => (
+                      <button
+                        key={num}
+                        onClick={() => setAdminPasscode(prev => prev + num)}
+                        className="bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl py-3 font-black text-white transition-all active:scale-95"
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setAdminPasscode('')}
+                      className="bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl py-3 font-black text-rose-400 text-[10px] uppercase col-span-2"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={handleAdminAuth}
+                    className="w-full bg-rose-500 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-rose-600 transition-all active:scale-[0.97] shadow-xl shadow-rose-500/20"
+                  >
+                    Verify & Connect
+                  </button>
+                  
+                  <button 
+                    onClick={() => { setShowAdminLogin(false); setAdminPasscode(''); }}
+                    className="w-full py-2 text-[9px] font-black text-white/30 uppercase tracking-widest hover:text-white/60 transition-colors"
+                  >
+                    Cancel Access
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Workspace */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 p-6 md:p-10 overflow-y-auto">
@@ -644,10 +893,17 @@ export default function AmarSeba() {
                 </div>
               </div>
               <button 
-                onClick={() => setIsDashboardOpen(true)}
-                className="w-full py-4 bg-white text-rose-900 rounded-2xl font-black text-xs uppercase tracking-tighter hover:bg-rose-50 transition-all active:scale-95 shadow-lg shadow-black/20"
+                onClick={() => {
+                  if (isAdminAuth) {
+                    setIsDashboardOpen(true);
+                  } else {
+                    setShowAdminLogin(true);
+                  }
+                }}
+                className="w-full py-4 bg-white text-rose-900 rounded-2xl font-black text-xs uppercase tracking-tighter hover:bg-rose-50 transition-all active:scale-95 shadow-lg shadow-black/20 flex items-center justify-center gap-2"
               >
-                View Remote Dashboard
+                {!isAdminAuth && <AlertCircle className="w-3 h-3 text-rose-500" />}
+                {isAdminAuth ? "Access Admin Console" : "View Remote Dashboard (Admin)"}
               </button>
             </div>
           </div>
@@ -722,6 +978,69 @@ export default function AmarSeba() {
 
             {/* Dashboard Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-y-auto">
+              {/* Master Command Console */}
+              <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-rose-500/10 border border-rose-500/20 rounded-3xl p-6 flex items-center justify-between group hover:bg-rose-500/20 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center text-rose-400">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-rose-300 uppercase tracking-widest">AI Engine</p>
+                      <p className="text-sm font-black text-white">{isAiLocked ? "LOCKDOWN" : "OPERATIONAL"}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsAiLocked(!isAiLocked)}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all",
+                      isAiLocked ? "bg-white text-rose-900" : "bg-rose-500 text-white"
+                    )}
+                  >
+                    {isAiLocked ? "Release" : "Lock"}
+                  </button>
+                </div>
+
+                <div className="bg-rose-500/10 border border-rose-500/20 rounded-3xl p-6 flex items-center justify-between group hover:bg-rose-500/20 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center text-rose-400">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-rose-300 uppercase tracking-widest">Global State</p>
+                      <p className="text-sm font-black text-white">{isMaintenanceMode ? "MAINTENANCE" : "LIVE"}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsMaintenanceMode(!isMaintenanceMode)}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all",
+                      isMaintenanceMode ? "bg-white text-rose-900" : "bg-rose-500 text-white"
+                    )}
+                  >
+                    {isMaintenanceMode ? "Resume" : "Suspend"}
+                  </button>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex items-center justify-between group hover:bg-white/10 transition-all">
+                   <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/40">
+                      <Smartphone className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Master Auth</p>
+                      <p className="text-sm font-black text-white">SYSTEM READY</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsLocked(true)}
+                    className="bg-white/10 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-rose-500 transition-all"
+                  >
+                    Lock Console
+                  </button>
+                </div>
+              </div>
+
               {/* Admin Control Center - Prominent and Centered in Layout */}
               <div className="lg:col-span-4 flex justify-center py-8">
                 <div className="w-full max-w-md bg-rose-500/10 border border-rose-500/20 rounded-[3rem] p-8 flex flex-col items-center text-center shadow-2xl relative overflow-hidden">
@@ -818,6 +1137,33 @@ export default function AmarSeba() {
                         </span>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Monitor */}
+              <div className="lg:col-span-1 space-y-4">
+                <h3 className="text-[10px] font-black text-rose-400 uppercase tracking-[0.2em] mb-4">Active Uplinks</h3>
+                <div className="space-y-3">
+                  {activeSessions.map((session) => (
+                    <div key={session.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-black text-white/60 tracking-tighter">#{session.id}</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[8px] font-black uppercase",
+                          session.status === 'Active' ? "bg-green-500/20 text-green-400" : "bg-white/10 text-white/40"
+                        )}>{session.status}</span>
+                      </div>
+                      <p className="text-[11px] font-black text-white mb-1">{session.device}</p>
+                      <div className="flex items-center gap-2 text-[9px] font-bold text-white/30 uppercase">
+                        <MapPin className="w-2 h-2" />
+                        {session.location}
+                        <span className="ml-auto">{session.lastSeen}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="p-4 bg-rose-500/5 border border-rose-500/10 border-dashed rounded-2xl flex flex-col items-center justify-center gap-2">
+                    <p className="text-[9px] font-black text-rose-300/40 uppercase tracking-[0.2em]">Waiting for pulses...</p>
                   </div>
                 </div>
               </div>

